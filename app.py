@@ -4,7 +4,7 @@ from bokeh.plotting import figure
 from zoneinfo import ZoneInfo
 from datetime import datetime, timezone
 from bokeh.palettes import Category10
-from firebase_admin import initialize_app, db
+from firebase_admin import initialize_app, db, credentials
 
 
 pn.extension(design="material")
@@ -16,8 +16,9 @@ local_tz = ZoneInfo("Europe/Paris")
 
 
 def initialise_db():
+    cred = credentials.Certificate("/etc/secrets/dht22records-7d6a2f605770.json")
     initialize_app(
-        "/etc/secrets/dht22records-7d6a2f605770.json",
+        cred,
         {
             "databaseURL": "https://dht22records-default-rtdb.europe-west1.firebasedatabase.app"
         },
