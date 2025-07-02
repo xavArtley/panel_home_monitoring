@@ -1,26 +1,21 @@
 import panel as pn
-from firebase_admin import db
 from bokeh.models import ColumnDataSource, HoverTool
 from bokeh.plotting import figure
 from zoneinfo import ZoneInfo
 from datetime import datetime, timezone
 from bokeh.palettes import Category10
-import firebase_admin
-from firebase_admin import credentials
-from pathlib import Path
-
-
+from firebase_admin import initialize_app, db
 
 
 pn.extension(design='material')
+if pn.state.curdoc is not None:
+    pn.state.curdoc.theme = "caliber"
 tools = "pan,box_zoom,wheel_zoom,reset"
 rollover = 10000
 local_tz = ZoneInfo("Europe/Paris")
 
 def initialise_db():
-    dirname = Path(__file__).parent
-    cred = credentials.Certificate(dirname / "api_key" / "dht22records-7d6a2f605770.json")
-    firebase_admin.initialize_app(cred, {
+    initialize_app({
         'databaseURL': 'https://dht22records-default-rtdb.europe-west1.firebasedatabase.app'
     })
 
@@ -71,7 +66,7 @@ def update():
         new_records = list(filter(lambda r: r["local_datetime"] not in cds[sensor].data["local_datetime"], 
             [process_record_timestamp(r) for r in db.reference(f"dht_readings/{sensor}")
             .order_by_key()
-            .limit_to_last(rollover)
+            .limit_to_last(3)
             .get()
             .values()
             ]
@@ -107,7 +102,6 @@ def bokeh_plot(sensors):
         tools=tools,
     )
     plot_humidity.toolbar.logo = None
-    plot_humidity.xaxis.axis_label = "Date"
     plot_humidity.yaxis.axis_label = "Humidity (%)"
     renderers = []
     for sensor in sensors:
