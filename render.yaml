@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: panel-app
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: panel serve app.py --address 0.0.0.0 --port $PORT --allow-websocket-origin="*"
