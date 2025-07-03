@@ -1,8 +1,8 @@
 import panel as pn
-from bokeh.models import ColumnDataSource, HoverTool
+from bokeh.models import ColumnDataSource
 from bokeh.plotting import figure
 from zoneinfo import ZoneInfo
-from datetime import datetime, timezone, date
+from datetime import datetime, date
 from bokeh.palettes import Category10
 from firebase_admin import initialize_app, db, credentials
 from pathlib import Path
@@ -10,7 +10,7 @@ import pandas as pd
 import param
 from sensor_widget import TemperatureWidget, HumidityWidget
 
-pn.extension(design="material")
+pn.extension(design="fast")
 if pn.state.curdoc is not None:
     pn.state.curdoc.theme = "caliber"
 tools = "pan,box_zoom,wheel_zoom,reset"
@@ -45,7 +45,7 @@ class Record(param.Parameterized):
             styles={"font-size": "16px", "margin": "20px 20px 0px 20px"},
         )
         return pn.WidgetBox(
-                pn.rx("### {}").format(self.param.label),
+                pn.rx("<h3 style='color: gray'>{}</h3>").format(self.param.label),
             pn.Row(tw, hw),
             pn.rx("`last_upd: {}`").format(self.param.timestamp),
             styles={
@@ -140,17 +140,6 @@ def init_plotting(sensors):
             ),
             plot_humidity.line(x="timestamp", y="humidity", source=cd, color=color),
         ]
-    # hover = HoverTool(
-    #     tooltips=[
-    #         ("Temperature", "@temperature{0.0} (°C)"),
-    #         ("Humidity", "@humidity{0.0} (%)"),
-    #         ("Date", "@time_str"),
-    #     ],
-    #     renderers=renderers,
-    #     mode="vline",
-    # )
-    # plot_temperature.add_tools(hover)
-    # plot_humidity.add_tools(hover)
 
     return (
         pn.pane.Bokeh(plot_temperature, sizing_mode="stretch_both"),
@@ -171,9 +160,9 @@ def init_current_records():
 
 
 sensors = list(db.reference("dht_readings").get(shallow=True).keys())
-sensor_selection = pn.widgets.MultiSelect(options=sensors, name="Sensor")
+sensor_selection = pn.widgets.MultiSelect(options=sensors, name="Sensors", sizing_mode="stretch_width")
 mode_selection = pn.widgets.RadioButtonGroup(
-    name="Mode", options={"Current": "current", "History": "history"}, button_type="primary"
+    name="Mode", options={"Current": "current", "History": "history"}, button_type="primary", sizing_mode="stretch_width"
 )
 plot_temperature, plot_humidity, cds, renderers = init_plotting(sensors=sensors)
 current_records = init_current_records()
@@ -194,21 +183,22 @@ plot_layout = pn.Column(plot_temperature, plot_humidity)
 current_records_layout = pn.FlexBox(*[r.layout() for r in current_records.values()])
 
 
-@pn.depends(mode_selection, watch=True, on_init=True)
+@pn.depends(mode_selection, watch=True)
 def select_view(mode):
     with pn.io.hold():
         if mode == "history":
+            sensor_selection.visible = True
             plot_layout.visible = True
             current_records_layout.visible = False
             # return plot_layout
         else:
+            sensor_selection.visible = False
             plot_layout.visible = False
             current_records_layout.visible = True
             # return  current_records_layout
 select_view(mode_selection.value)
 
 def update():
-    print("Update")
     for sensor in sensors:
         data = fetch_data(sensor, limit_to_last=3)
         if data is None or data.empty:
@@ -235,8 +225,8 @@ def on_session_destroyed(session_context):
 pn.state.on_session_destroyed(on_session_destroyed)
 
 
-template = pn.template.BootstrapTemplate()
-template.sidebar += [sensor_selection, mode_selection]
+template = pn.template.BootstrapTemplate(title="Home Temperature/Humidity Monitoring", header_background="#c01754")
+template.sidebar += [mode_selection, sensor_selection]
 template.main.append(pn.Column(plot_layout, current_records_layout))
 
 template.servable()
