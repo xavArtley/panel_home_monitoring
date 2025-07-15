@@ -20,7 +20,7 @@ palette = Category10[10]
 secret_file = (
     Path("/etc/secrets/dht22records-7d6a2f605770.json")
     if Path("/etc/secrets/dht22records-7d6a2f605770.json").exists()
-    else Path("./api_key/dht22records-7d6a2f605770.json")
+    else next(Path("./api_key/").glob("dht22records-*.json"))
 )
 
 
@@ -31,6 +31,11 @@ class Record(param.Parameterized):
     label = param.String()
 
     def __init__(self, **params):
+        if "weather_code" in params:
+            weather_code = params.pop("weather_code")
+        if "label" in params and params["label"]=="outside_data":
+            params["label"] = "Outside"
+
         if "timestamp" in params and isinstance(params["timestamp"], datetime):
             params["timestamp"] = params["timestamp"].strftime("%H:%M:%S")
         super().__init__(**params)
@@ -118,6 +123,7 @@ def init_plotting(sensors):
     )
     plot_temperature.toolbar.logo = None
     plot_temperature.yaxis.axis_label = "Temperature (°C)"
+
     plot_humidity = figure(
         sizing_mode="stretch_both",
         x_axis_type="datetime",
@@ -126,6 +132,7 @@ def init_plotting(sensors):
     )
     plot_humidity.toolbar.logo = None
     plot_humidity.yaxis.axis_label = "Humidity (%)"
+
     cds = {}
     renderers = {}
     for idx, sensor in enumerate(sensors):
@@ -134,13 +141,17 @@ def init_plotting(sensors):
         assert data is not None
         cd = ColumnDataSource(ColumnDataSource.from_df(data))
         cds[sensor] = cd
+        legend_label = sensor if sensor != "outside_data" else "Outside"
         renderers[sensor] = [
             plot_temperature.line(
-                x="timestamp", y="temperature", source=cd, color=color
+                x="timestamp", y="temperature", source=cd, color=color, legend_label=legend_label
             ),
-            plot_humidity.line(x="timestamp", y="humidity", source=cd, color=color),
+            plot_humidity.line(x="timestamp", y="humidity", source=cd, color=color, legend_label=legend_label),
         ]
-
+    plot_temperature.legend.click_policy="hide"
+    plot_temperature.legend.orientation="horizontal"
+    plot_humidity.legend.click_policy="hide"
+    plot_humidity.legend.orientation="horizontal"
     return (
         pn.pane.Bokeh(plot_temperature, sizing_mode="stretch_both"),
         pn.pane.Bokeh(plot_humidity, sizing_mode="stretch_both"),
