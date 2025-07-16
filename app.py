@@ -136,8 +136,8 @@ def update_outside_data_firebase():
     last_outside_data = fetch_data("outside_data", limit_to_last=1)
     if last_outside_data is None:
         return
-    start_date = last_outside_data.index[0]
-    now = datetime.now()
+    start_date = last_outside_data.index[0].tz_localize(local_tz)
+    now = datetime.now(tz=local_tz)
     if not (now - start_date > timedelta(minutes=15)):
         print(f"Less than 15 minutes elapsed between last update: ({start_date:%H:%M:%S}) and  now: ({now:%H:%M:%S})")
         return
@@ -234,17 +234,18 @@ current_records = {sensor: Record(**record) for sensor, record in get_last_recor
 current_records_layout = pn.FlexBox(*[r.layout() for r in current_records.values()])
 
 def update():
+    print(f"Update {datetime.now(tz=local_tz):%H:%M:%S}")
     datetime_range_selection.end = datetime.now()
     for sensor in sensors:
         last_records  = get_last_records(list(current_records.keys()))
         for sensor, record  in last_records.items():
             record["timestamp"] = record["timestamp"].strftime("%H:%M:%S %d/%m/%Y")
+            record.pop("weather_code", None)
             current_records[sensor].param.update(**record)
 
 update_cb = pn.state.add_periodic_callback(update, 60000, start=True)
 def on_session_destroyed(session_context: SessionContext):
     print(f"Session {session_context.id} destroyed, stopping callback")
-    update_cb.stop()
 
 pn.state.on_session_destroyed(on_session_destroyed)
 
