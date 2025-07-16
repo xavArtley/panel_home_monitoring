@@ -113,25 +113,6 @@ def fetch_data(
         df = df.set_index("timestamp")
         return df.select_dtypes(exclude=object)
 
-
-def get_outside_record(latitude=48.7, longitude=2.1):
-
-    url = f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,relative_humidity_2m&timezone=auto&forecast_days=1"
-    resp = requests.get(url)
-    if resp.status_code != 200:
-        print(json.loads(resp.content.decode())["reason"])
-        return
-    data = json.loads(resp.content.decode())
-    assert isinstance(pn.state.cache, dict)
-
-    record = {
-        "label": "Gif-sur-Yvette",
-        "timestamp": datetime.fromisoformat(data["current"]["time"]),
-        "temperature": data["current"]["temperature_2m"],
-        "humidity": data["current"]["relative_humidity_2m"],
-    }
-    return record
-
 def update_outside_data_firebase():
     last_outside_data = fetch_data("outside_data", limit_to_last=1)
     if last_outside_data is None:
@@ -148,11 +129,12 @@ def update_outside_data_firebase():
     df = pd.DataFrame(json.loads(requests.get(url).content.decode())["minutely_15"])
     df["time"] = pd.to_datetime(df.time)
     df = df.set_index("time")
-    df = df[(df.index>start_date) & (df.index<datetime.now())]
+    df.index = df.index.tz_localize(local_tz)
+    df = df[(df.index>start_date) & (df.index<now)]
     if df.empty:
         return
     df.columns = ["temperature", "humidity", "weather_code"]
-    df.index = df.index.astype(int)//int(1e9) - 3600*2
+    df.index = df.index.astype(int)//int(1e9)
     df["timestamp"] = df.index
     external_data = df.to_dict("index")
     db.reference("dht_readings/outside_data").update(external_data)
@@ -162,7 +144,7 @@ def update_outside_data_firebase():
 def setup():
     print("setup")
     initialise_db()
-    SingleGlobalTaskRunner(key="update_outside_data_firebase", worker=update_outside_data_firebase, seconds=60)
+    SingleGlobalTaskRunner(key="update_outside_data_firebase", worker=update_outside_data_firebase, seconds=60*5)
 
 def init_plotting(sensors, datetime_range):
     plot_temperature = figure(
