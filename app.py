@@ -205,7 +205,7 @@ def get_last_records(sensors):
 
 setup()
 sensors = list(db.reference("dht_readings").get(shallow=True).keys())
-now = datetime.now()
+now = datetime.now(tz=local_tz)
 datetime_range_selection = pn.widgets.DatetimeRangePicker(value=(now - timedelta(days=2),  now), end=now, visible=False, styles={"user-select": "none"})
 mode_selection = pn.widgets.RadioButtonGroup(
     name="Mode", options={"Current": "current", "History": "history"}, button_type="primary", sizing_mode="stretch_width"
@@ -217,7 +217,7 @@ current_records_layout = pn.FlexBox(*[r.layout() for r in current_records.values
 
 def update():
     print(f"Update {datetime.now(tz=local_tz):%H:%M:%S}")
-    datetime_range_selection.end = datetime.now()
+    datetime_range_selection.end = datetime.now(tz=local_tz)
     for sensor in sensors:
         last_records  = get_last_records(list(current_records.keys()))
         for sensor, record  in last_records.items():
