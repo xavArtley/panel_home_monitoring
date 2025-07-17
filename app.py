@@ -144,34 +144,36 @@ def fetch_data(
 
 
 def update_outside_data_firebase():
-    last_outside_data = fetch_data("outside_data", limit_to_last=1)
-    if last_outside_data is None:
-        return
-    start_date = last_outside_data.index[0].tz_localize(local_tz)
-    now = datetime.now(tz=local_tz)
-    if not (now - start_date > timedelta(minutes=15)):
-        logger.info(
-            f"Less than 15 minutes elapsed between last update: ({start_date:%H:%M:%S}) and  now: ({now:%H:%M:%S})"
-        )
-        return
-    else:
-        logger.info(
-            f"More than 15 minutes between elapsed last update: ({start_date:%H:%M:%S}) and  now: ({now:%H:%M:%S}) => Update"
-        )
-    end_date = start_date + timedelta(days=1)
-    url = f"https://api.open-meteo.com/v1/forecast?latitude=48.69642424920413&longitude=2.1054503941243166&minutely_15=temperature_2m,relative_humidity_2m,weather_code&timezone=auto&start_date={start_date.strftime('%Y-%m-%d')}&end_date={end_date.strftime('%Y-%m-%d')}"
-    df = pd.DataFrame(json.loads(requests.get(url).content.decode())["minutely_15"])
-    df["time"] = pd.to_datetime(df.time)
-    df = df.set_index("time")
-    df.index = df.index.tz_localize(local_tz)
-    df = df[(df.index > start_date) & (df.index < now)]
-    if df.empty:
-        return
-    df.columns = ["temperature", "humidity", "weather_code"]
-    df.index = df.index.astype(int) // int(1e9)
-    df["timestamp"] = df.index
-    external_data = df.to_dict("index")
-    db.reference("dht_readings/outside_data").update(external_data)
+    try:
+        last_outside_data = fetch_data("outside_data", limit_to_last=1)
+        if last_outside_data is None:
+            return
+        start_date = last_outside_data.index[0].tz_localize(local_tz)
+        now = datetime.now(tz=local_tz)
+        if not (now - start_date > timedelta(minutes=15)):
+            logger.info(
+                f"Less than 15 minutes elapsed between last update: ({start_date:%H:%M:%S}) and  now: ({now:%H:%M:%S})"
+            )
+        else:
+            logger.info(
+                f"More than 15 minutes between elapsed last update: ({start_date:%H:%M:%S}) and  now: ({now:%H:%M:%S}) => Update"
+            )
+        end_date = start_date + timedelta(days=1)
+        url = f"https://api.open-meteo.com/v1/forecast?latitude=48.69642424920413&longitude=2.1054503941243166&minutely_15=temperature_2m,relative_humidity_2m,weather_code&timezone=auto&start_date={start_date.strftime('%Y-%m-%d')}&end_date={end_date.strftime('%Y-%m-%d')}"
+        df = pd.DataFrame(json.loads(requests.get(url).content.decode())["minutely_15"])
+        df["time"] = pd.to_datetime(df.time)
+        df = df.set_index("time")
+        df.index = df.index.tz_localize(local_tz)
+        df = df[(df.index > start_date) & (df.index < now)]
+        if df.empty:
+            return
+        df.columns = ["temperature", "humidity", "weather_code"]
+        df.index = df.index.astype(int) // int(1e9)
+        df["timestamp"] = df.index
+        external_data = df.to_dict("index")
+        db.reference("dht_readings/outside_data").update(external_data)
+    except Exception as e:
+        logger.error(str(e), exc_info=True)
 
 
 @pn.cache
@@ -181,7 +183,7 @@ def setup():
     SingleGlobalTaskRunner(
         key="update_outside_data_firebase",
         worker=update_outside_data_firebase,
-        seconds=60 * 5,
+        seconds=10,
     )
 
 
