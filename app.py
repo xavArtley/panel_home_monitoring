@@ -9,14 +9,12 @@ import pandas as pd
 import panel as pn
 import param
 import requests
-from bokeh.application.application import SessionContext
 from bokeh.models import ColumnDataSource
 from bokeh.palettes import Category10
 from bokeh.plotting import figure
 from firebase_admin import credentials, db, initialize_app
 
 from sensor_widget import HumidityWidget, TemperatureWidget
-from single_global_task_scheduler import SingleGlobalTaskRunner
 
 pn.extension(design="material")
 if pn.state.curdoc is not None:
@@ -181,11 +179,7 @@ def update_outside_data_firebase():
 def setup():
     logger.info("setup")
     initialise_db()
-    SingleGlobalTaskRunner(
-        key="update_outside_data_firebase",
-        worker=update_outside_data_firebase,
-        seconds=10,
-    )
+    update_outside_data_firebase()
 
 
 def init_plotting(sensors, datetime_range):
@@ -286,6 +280,7 @@ current_records_layout = pn.FlexBox(*[r.layout() for r in current_records.values
 
 def update():
     logger.info(f"Update {datetime.now(tz=local_tz):%H:%M:%S}")
+    update_outside_data_firebase()
     datetime_range_selection.end = datetime.now(tz=local_tz)
     for sensor in sensors:
         last_records = get_last_records(list(current_records.keys()))
