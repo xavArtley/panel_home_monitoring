@@ -3,6 +3,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import sys
+import logging
 import pandas as pd
 import panel as pn
 import param
@@ -22,6 +24,30 @@ if pn.state.curdoc is not None:
 tools = "pan,box_zoom,wheel_zoom,reset"
 local_tz = ZoneInfo("Europe/Paris")
 palette = Category10[10]
+FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+
+
+@pn.cache
+def get_logger(name, format_=FORMAT, level=logging.INFO):
+    logger = logging.getLogger(name)
+
+    logger.handlers.clear()
+
+    handler = logging.StreamHandler()
+    handler.setStream(sys.stdout)
+    formatter = logging.Formatter(format_)
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.propagate = False
+
+    logger.setLevel(level)
+    logger.info("Logger successfully configured")
+    return logger
+
+
+get_logger(name="bokeh")
+get_logger(name="panel")
+logger = get_logger(name="app")
 
 secret_file = (
     Path("/etc/secrets/dht22records-7d6a2f605770.json")
@@ -30,6 +56,7 @@ secret_file = (
 )
 
 empty_records = {"temperature": [], "humidity": [], "timestamp": []}
+
 
 class Record(param.Parameterized):
     temperature = param.Number(default=0)
@@ -40,7 +67,7 @@ class Record(param.Parameterized):
     def __init__(self, **params):
         if "weather_code" in params:
             weather_code = params.pop("weather_code")
-        if "label" in params and params["label"]=="outside_data":
+        if "label" in params and params["label"] == "outside_data":
             params["label"] = "Outside"
 
         if "timestamp" in params and isinstance(params["timestamp"], datetime):
@@ -57,7 +84,7 @@ class Record(param.Parameterized):
             styles={"font-size": "16px", "margin": "20px 20px 0px 20px"},
         )
         return pn.WidgetBox(
-                pn.rx("<h3 style='color: gray'>{}</h3>").format(self.param.label),
+            pn.rx("<h3 style='color: gray'>{}</h3>").format(self.param.label),
             pn.Row(tw, hw),
             pn.rx("`last_upd: {}`").format(self.param.timestamp),
             styles={
@@ -103,7 +130,9 @@ def fetch_data(
         end_ts = _to_timestamp(end_date)
         query.end_at(str(end_ts))
 
-    df: pd.DataFrame = pd.DataFrame.from_dict(query.get(), orient="index").reset_index(drop=True)
+    df: pd.DataFrame = pd.DataFrame.from_dict(query.get(), orient="index").reset_index(
+        drop=True
+    )
     if not df.empty:
         df["timestamp"] = (
             pd.to_datetime(df["timestamp"].astype(int), unit="s", utc=True)
@@ -113,6 +142,7 @@ def fetch_data(
         df = df.set_index("timestamp")
         return df.select_dtypes(exclude=object)
 
+
 def update_outside_data_firebase():
     last_outside_data = fetch_data("outside_data", limit_to_last=1)
     if last_outside_data is None:
@@ -120,21 +150,25 @@ def update_outside_data_firebase():
     start_date = last_outside_data.index[0].tz_localize(local_tz)
     now = datetime.now(tz=local_tz)
     if not (now - start_date > timedelta(minutes=15)):
-        print(f"Less than 15 minutes elapsed between last update: ({start_date:%H:%M:%S}) and  now: ({now:%H:%M:%S})")
+        logger.info(
+            f"Less than 15 minutes elapsed between last update: ({start_date:%H:%M:%S}) and  now: ({now:%H:%M:%S})"
+        )
         return
     else:
-        print(f"More than 15 minutes between elapsed last update: ({start_date:%H:%M:%S}) and  now: ({now:%H:%M:%S}) => Update")
+        logger.info(
+            f"More than 15 minutes between elapsed last update: ({start_date:%H:%M:%S}) and  now: ({now:%H:%M:%S}) => Update"
+        )
     end_date = start_date + timedelta(days=1)
     url = f"https://api.open-meteo.com/v1/forecast?latitude=48.69642424920413&longitude=2.1054503941243166&minutely_15=temperature_2m,relative_humidity_2m,weather_code&timezone=auto&start_date={start_date.strftime('%Y-%m-%d')}&end_date={end_date.strftime('%Y-%m-%d')}"
     df = pd.DataFrame(json.loads(requests.get(url).content.decode())["minutely_15"])
     df["time"] = pd.to_datetime(df.time)
     df = df.set_index("time")
     df.index = df.index.tz_localize(local_tz)
-    df = df[(df.index>start_date) & (df.index<now)]
+    df = df[(df.index > start_date) & (df.index < now)]
     if df.empty:
         return
     df.columns = ["temperature", "humidity", "weather_code"]
-    df.index = df.index.astype(int)//int(1e9)
+    df.index = df.index.astype(int) // int(1e9)
     df["timestamp"] = df.index
     external_data = df.to_dict("index")
     db.reference("dht_readings/outside_data").update(external_data)
@@ -142,9 +176,14 @@ def update_outside_data_firebase():
 
 @pn.cache
 def setup():
-    print("setup")
+    logger.info("setup")
     initialise_db()
-    SingleGlobalTaskRunner(key="update_outside_data_firebase", worker=update_outside_data_firebase, seconds=60*5)
+    SingleGlobalTaskRunner(
+        key="update_outside_data_firebase",
+        worker=update_outside_data_firebase,
+        seconds=60 * 5,
+    )
+
 
 def init_plotting(sensors, datetime_range):
     plot_temperature = figure(
@@ -168,7 +207,9 @@ def init_plotting(sensors, datetime_range):
     renderers = {}
     for idx, sensor in enumerate(sensors):
         color = palette[idx]
-        data = fetch_data(sensor, start_date=datetime_range[0], end_date=datetime_range[1])
+        data = fetch_data(
+            sensor, start_date=datetime_range[0], end_date=datetime_range[1]
+        )
         if data is None:
             cd = ColumnDataSource(empty_records)
         else:
@@ -177,14 +218,24 @@ def init_plotting(sensors, datetime_range):
         legend_label = sensor if sensor != "outside_data" else "Outside"
         renderers[sensor] = [
             plot_temperature.line(
-                x="timestamp", y="temperature", source=cd, color=color, legend_label=legend_label
+                x="timestamp",
+                y="temperature",
+                source=cd,
+                color=color,
+                legend_label=legend_label,
             ),
-            plot_humidity.line(x="timestamp", y="humidity", source=cd, color=color, legend_label=legend_label),
+            plot_humidity.line(
+                x="timestamp",
+                y="humidity",
+                source=cd,
+                color=color,
+                legend_label=legend_label,
+            ),
         ]
-    plot_temperature.legend.click_policy="hide"
-    plot_temperature.legend.orientation="horizontal"
-    plot_humidity.legend.click_policy="hide"
-    plot_humidity.legend.orientation="horizontal"
+    plot_temperature.legend.click_policy = "hide"
+    plot_temperature.legend.orientation = "horizontal"
+    plot_humidity.legend.click_policy = "hide"
+    plot_humidity.legend.orientation = "horizontal"
     return (
         pn.pane.Bokeh(plot_temperature, sizing_mode="stretch_both"),
         pn.pane.Bokeh(plot_humidity, sizing_mode="stretch_both"),
@@ -206,34 +257,49 @@ def get_last_records(sensors):
 setup()
 sensors = list(db.reference("dht_readings").get(shallow=True).keys())
 now = datetime.now(tz=local_tz)
-datetime_range_selection = pn.widgets.DatetimeRangePicker(value=(now - timedelta(days=2),  now), end=now, visible=False, styles={"user-select": "none"})
-mode_selection = pn.widgets.RadioButtonGroup(
-    name="Mode", options={"Current": "current", "History": "history"}, button_type="primary", sizing_mode="stretch_width"
+datetime_range_selection = pn.widgets.DatetimeRangePicker(
+    value=(now - timedelta(days=2), now),
+    end=now,
+    visible=False,
+    styles={"user-select": "none"},
 )
-plot_temperature, plot_humidity, cds, renderers = init_plotting(sensors=sensors, datetime_range=datetime_range_selection.value)
-current_records = {sensor: Record(**record) for sensor, record in get_last_records(sensors=sensors).items() if record is not None}
+mode_selection = pn.widgets.RadioButtonGroup(
+    name="Mode",
+    options={"Current": "current", "History": "history"},
+    button_type="primary",
+    sizing_mode="stretch_width",
+)
+plot_temperature, plot_humidity, cds, renderers = init_plotting(
+    sensors=sensors, datetime_range=datetime_range_selection.value
+)
+current_records = {
+    sensor: Record(**record)
+    for sensor, record in get_last_records(sensors=sensors).items()
+    if record is not None
+}
 
 current_records_layout = pn.FlexBox(*[r.layout() for r in current_records.values()])
 
+
 def update():
-    print(f"Update {datetime.now(tz=local_tz):%H:%M:%S}")
+    logger.info(f"Update {datetime.now(tz=local_tz):%H:%M:%S}")
     datetime_range_selection.end = datetime.now(tz=local_tz)
     for sensor in sensors:
-        last_records  = get_last_records(list(current_records.keys()))
-        for sensor, record  in last_records.items():
+        last_records = get_last_records(list(current_records.keys()))
+        for sensor, record in last_records.items():
             record["timestamp"] = record["timestamp"].strftime("%H:%M:%S %d/%m/%Y")
             record.pop("weather_code", None)
             current_records[sensor].param.update(**record)
 
-update_cb = pn.state.add_periodic_callback(update, 60000, start=True)
-def on_session_destroyed(session_context: SessionContext):
-    print(f"Session {session_context.id} destroyed, stopping callback")
 
-pn.state.on_session_destroyed(on_session_destroyed)
+update_cb = pn.state.add_periodic_callback(update, 60000, start=True)
 
 plots = pn.Column(plot_temperature, plot_humidity)
 tabs = pn.Tabs(("Current", current_records_layout), ("History", plots))
-tabs.jscallback(args={"w": datetime_range_selection}, active="w.visible = source.active==1")
+tabs.jscallback(
+    args={"w": datetime_range_selection}, active="w.visible = source.active==1"
+)
+
 
 @pn.depends(datetime_range_selection.param.value, watch=True)
 def date_range_change(datetime_range):
@@ -244,7 +310,9 @@ def date_range_change(datetime_range):
                 if sensor in cds:
                     cds[sensor].data = {}
             else:
-                data = fetch_data(sensor, start_date=datetime_range[0], end_date=datetime_range[1])
+                data = fetch_data(
+                    sensor, start_date=datetime_range[0], end_date=datetime_range[1]
+                )
                 if data is not None:
                     cds[sensor].data = ColumnDataSource.from_df(data)
                 else:
@@ -253,7 +321,9 @@ def date_range_change(datetime_range):
         plots.loading = False
 
 
-template = pn.template.BootstrapTemplate(title="Home Temperature/Humidity Monitoring", header_background="#c01754")
+template = pn.template.BootstrapTemplate(
+    title="Home Temperature/Humidity Monitoring", header_background="#c01754"
+)
 template.sidebar += [datetime_range_selection]
 template.main.append(tabs)
 
