@@ -144,6 +144,7 @@ def fetch_data(
 
 
 def update_outside_data_firebase():
+    logger.info("run update update_outside_data_firebase")
     try:
         last_outside_data = fetch_data("outside_data", limit_to_last=1)
         if last_outside_data is None:
