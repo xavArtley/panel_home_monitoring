@@ -253,7 +253,7 @@ def get_last_records(sensors):
 
 setup()
 sensors = list(db.reference("dht_readings").get(shallow=True).keys())
-now = datetime.now(tz=local_tz)
+now = datetime.now(tz=local_tz).replace(tzinfo=None)
 datetime_range_selection = pn.widgets.DatetimeRangePicker(
     value=(now - timedelta(days=2), now),
     end=now,
@@ -281,7 +281,7 @@ current_records_layout = pn.FlexBox(*[r.layout() for r in current_records.values
 def update():
     logger.info(f"Update {datetime.now(tz=local_tz):%H:%M:%S}")
     update_outside_data_firebase()
-    datetime_range_selection.end = datetime.now(tz=local_tz)
+    datetime_range_selection.end = datetime.now(tz=local_tz).replace(tzinfo=None)
     for sensor in sensors:
         last_records = get_last_records(list(current_records.keys()))
         for sensor, record in last_records.items():
