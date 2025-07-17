@@ -30,7 +30,7 @@ class SingleGlobalTaskRunner(param.Parameterized):
         if hasattr(self, "_thread") and self._thread.is_alive():
             return
         self._stop_thread = False
-        self._thread = threading.Thread(target=self._task_runner, daemon=True)
+        self._thread = threading.Thread(target=self._task_runner, daemon=False)
         self._thread.start()
         self._log("Created")
 
